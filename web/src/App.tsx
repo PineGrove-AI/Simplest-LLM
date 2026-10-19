@@ -121,8 +121,6 @@ export default function App() {
   // The "before" snapshot: completions captured the first time we run, so they
   // stay fixed while the user retrains and compares against the new output.
   const [beforeResults, setBeforeResults] = useState<string[][] | null>(null);
-  // Only show results after the user has clicked Generate (not while typing).
-  const [hasRun, setHasRun] = useState(false);
 
   // Which "How it works" step is expanded (null = all closed).
   const [open, setOpen] = useState<number | null>(null);
@@ -725,7 +723,7 @@ export default function App() {
                   onChange={(e) => setTestLength(Number(e.target.value))}
                 />
               </label>
-              <button onClick={captureBefore}>Generate completions</button>
+              <button onClick={runTest}>Generate completions</button>
             </div>
 
             {afterResults && (
