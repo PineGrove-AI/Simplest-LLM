@@ -67,14 +67,62 @@ function Step({
   );
 }
 
+// Max rows to render in the JSON viewer before truncating.
+const MAX_JSON_ROWS = 50;
+
+/**
+ * Build a display-friendly copy of the model, truncating W and b when they
+ * exceed MAX_JSON_ROWS so the JsonViewer doesn't freeze on large vocabs.
+ */
+function truncateForDisplay(model: {
+  vocab: string[];
+  context_size: number;
+  W: number[][];
+  b: number[];
+}) {
+  const out: Record<string, unknown> = {
+    vocab: model.vocab,
+    context_size: model.context_size,
+  };
+  if (model.W.length > MAX_JSON_ROWS) {
+    out.W = [
+      ...model.W.slice(0, MAX_JSON_ROWS),
+      `… (${model.W.length - MAX_JSON_ROWS} more rows)`,
+    ];
+  } else {
+    out.W = model.W;
+  }
+  if (model.b.length > MAX_JSON_ROWS) {
+    out.b = [
+      ...model.b.slice(0, MAX_JSON_ROWS),
+      `… (${model.b.length - MAX_JSON_ROWS} more)`,
+    ];
+  } else {
+    out.b = model.b;
+  }
+  return out;
+}
+
 // Renders the live model as a nice, collapsible JSON tree.
 // Starts with the top-level keys visible but the big arrays (W, b, vocab)
 // collapsed, so the file is readable without dumping hundreds of numbers.
 function ModelJson({ model }: { model: unknown }) {
+  const display = useMemo(
+    () =>
+      truncateForDisplay(
+        model as {
+          vocab: string[];
+          context_size: number;
+          W: number[][];
+          b: number[];
+        },
+      ),
+    [model],
+  );
   return (
     <div className="json-viewer-wrap">
       <JsonViewer
-        data={model}
+        data={display}
         expanded={1}
         theme="default-dark"
         showToolbar={false}
@@ -190,8 +238,8 @@ export default function App() {
   };
 
   // Test bench: generate completions for every test prompt using the current
-  // model. On the first run we also store these as the "before" snapshot so
-  // later runs (after retraining) can be compared against them.
+  // model. The "before" snapshot is captured automatically at train time (with
+  // the pre-training model), so the table shows a true before/after comparison.
   const parseTestPrompts = () =>
     testPrompts
       .split("\n")
@@ -206,12 +254,18 @@ export default function App() {
       completePrompt(p.split(/\s+/), testLength, true),
     );
     setAfterResults(results);
-    if (!beforeResults) setBeforeResults(results); // freeze baseline on first run
   };
 
   const doTrain = async () => {
     setTraining(true);
     setTrained(false);
+    // Capture the "before" snapshot with the current (pre-training) model so
+    // the Test tab can show a true before/after comparison.
+    const prompts = parseTestPrompts();
+    if (prompts.length > 0) {
+      const before = prompts.map((p) => completePrompt(p.split(/\s+/), testLength, true));
+      setBeforeResults(before);
+    }
     // train() is async and yields between epochs, so the UI stays responsive
     // (progress bar animates) even on large input.
     const m = await train(trainText, {
@@ -222,6 +276,7 @@ export default function App() {
     setTrained(true);
     setTraining(false);
     reset();
+    setAfterResults(null);
   };
 
   return (
@@ -565,9 +620,14 @@ export default function App() {
                       <div key={word} className="prob-row">
                         <span className="prob-word">{word}</span>
                         <div className="prob-track">
-                          <div className="prob-fill" style={{ width: `${Math.min(100, p * 100)}%` }} />
+                          <div
+                            className="prob-fill"
+                            style={{ width: `${Math.min(100, p * 100)}%` }}
+                          />
                         </div>
-                        <span className="prob-num">{(p * 100).toFixed(1)}%</span>
+                        <span className="prob-num">
+                          {(p * 100).toFixed(1)}%
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -653,7 +713,8 @@ export default function App() {
                     />
                   </div>
                   <span>
-                    epoch {progress.epoch + 1}/{epochs} ·
+                    epoch {progress.epoch + 1}/{epochs} · loss{" "}
+                    {progress.loss.toFixed(4)}
                     <button
                       className="info-btn inline"
                       onClick={() => setShowLossInfo((s) => !s)}
@@ -661,7 +722,6 @@ export default function App() {
                     >
                       <span>?</span>
                     </button>
-                    loss {progress.loss.toFixed(4)}
                   </span>
                 </div>
               )}
@@ -670,12 +730,13 @@ export default function App() {
                 <div className="epoch-popup">
                   <b>What is loss?</b> Loss is the model's &ldquo;how wrong am
                   I? &rdquo; score: a single number measuring how far off its
-                  predictions are from the correct next words. It's basically
-                  the negative log of the probability it assigned to the right
-                  word, averaged over all of them. High at first (weights are
-                  random), then it falls as each epoch nudges the weights so
-                  correct words get higher probability. The model trains by
-                  making this number go down.
+                  predictions are from the correct next words (matching the
+                  training data). <br />
+                  It's basically the negative log of the probability it assigned
+                  to the right word, averaged over all of them. High at first
+                  (weights are random), then it falls as each epoch nudges the
+                  weights so correct words get higher probability. The model
+                  trains by making this number go down.
                   <button
                     className="popup-close"
                     onClick={() => setShowLossInfo(false)}
