@@ -16,7 +16,13 @@ export interface TrainOptions {
   contextSize?: number;   // how many previous words to look at (default 4)
   epochs?: number;        // how many times to walk over the data (default 200)
   learningRate?: number;  // size of each correction step (default 0.5)
+  maxExamples?: number;   // cap on training examples, to keep big inputs fast (default 4000)
   onProgress?: (epoch: number, avgLoss: number) => void;
+}
+
+/** Yield control back to the browser so it can repaint between epochs. */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /** Turn raw scores into probabilities that sum to 1. */
@@ -38,11 +44,15 @@ function randn(): number {
 /**
  * Train a model from raw text. Returns the full model (vocab, W, b) ready to
  * be used for completion. This is the "file of math" being created live.
+ *
+ * Async on purpose: it yields to the browser between epochs so the UI stays
+ * responsive (progress bar animates, page doesn't freeze) even on large input.
  */
-export function train(text: string, opts: TrainOptions = {}): TrainedModel {
+export async function train(text: string, opts: TrainOptions = {}): Promise<TrainedModel> {
   const CONTEXT_SIZE = opts.contextSize ?? 4;
   const EPOCHS = opts.epochs ?? 200;
   const LEARNING_RATE = opts.learningRate ?? 0.5;
+  const MAX_EXAMPLES = opts.maxExamples ?? 4000;
 
   // --- Build vocabulary: "pad" first, then every new word in order of appearance.
   const vocab: string[] = ["pad"];
@@ -67,6 +77,21 @@ export function train(text: string, opts: TrainOptions = {}): TrainedModel {
       X.push(ctx);
       y.push(toks[t]);
     }
+  }
+  // Cap the work so a big paste stays fast. If there are more examples than
+  // the cap, use a random sample of them (still representative of the text).
+  if (X.length > MAX_EXAMPLES) {
+    const sampled: number[] = [];
+    while (sampled.length < MAX_EXAMPLES) {
+      sampled.push(Math.floor(Math.random() * X.length));
+    }
+    for (let i = X.length - 1; i > 0; i--) {
+      const j = sampled[i];
+      [X[i], X[j]] = [X[j], X[i]];
+      [y[i], y[j]] = [y[j], y[i]];
+    }
+    X.splice(MAX_EXAMPLES);
+    y.splice(MAX_EXAMPLES);
   }
 
   // --- The model: W is a table, one row per (position, word) pair.
@@ -110,6 +135,7 @@ export function train(text: string, opts: TrainOptions = {}): TrainedModel {
       for (let o = 0; o < V; o++) b[o] -= LEARNING_RATE * grad[o];
     }
     opts.onProgress?.(epoch, totalLoss / X.length);
+    await yieldToBrowser();
   }
 
   return { vocab, context_size: CONTEXT_SIZE, W, b };

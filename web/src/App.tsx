@@ -6,6 +6,7 @@ import {
   toInputVector,
   nextWordDistribution,
   nextWord,
+  completePrompt,
 } from "./model";
 import { train } from "./trainer";
 import JsonViewer from "@andypf/json-viewer/dist/esm/react/JsonViewer";
@@ -109,8 +110,22 @@ export default function App() {
   // Left panel: show the live model.json.
   const [showModel, setShowModel] = useState(true);
 
+  // Active tab: explore | train | test.
+  const [tab, setTab] = useState<"explore" | "train" | "test">("explore");
+
+  // Test bench state.
+  const [testPrompts, setTestPrompts] = useState(
+    "the cat\nthe dog sat\na cat is on\nthe dog",
+  );
+  const [testLength, setTestLength] = useState(5);
+  // The "before" snapshot: completions captured the first time we run, so they
+  // stay fixed while the user retrains and compares against the new output.
+  const [beforeResults, setBeforeResults] = useState<string[][] | null>(null);
+  // Only show results after the user has clicked Generate (not while typing).
+  const [hasRun, setHasRun] = useState(false);
+
   // Which "How it works" step is expanded (null = all closed).
-  const [open, setOpen] = useState<number | null>(2);
+  const [open, setOpen] = useState<number | null>(null);
 
   const prompt = useMemo(
     () => promptText.toLowerCase().split(/\s+/).filter(Boolean),
@@ -150,8 +165,15 @@ export default function App() {
   );
   // A single deterministic "sample" for the demo: the most likely word.
   const top = probPreview[0];
-  const sampledWord = top?.word ?? "";
-  const sampledP = top?.p ?? 0;
+  // The Sample step reflects the live completion when there is one (the last
+  // word actually picked and its real distribution); otherwise it falls back
+  // to the first word after the raw prompt.
+  const hasCompletion = generated.length > 0 && lastStep !== null;
+  const sampledWord = hasCompletion ? lastStep!.token : (top?.word ?? "");
+  const sampledP = hasCompletion
+    ? (lastStep!.probs.find((p) => p.word === lastStep!.token)?.p ?? 0)
+    : (top?.p ?? 0);
+  const sampleDist = hasCompletion ? lastStep!.probs : probPreview;
 
   // Add exactly one word to the running completion. The context is the prompt
   // plus everything generated so far, so each click continues from where the
@@ -169,20 +191,39 @@ export default function App() {
     setLastStep(null);
   };
 
-  const doTrain = () => {
+  // Test bench: generate completions for every test prompt using the current
+  // model. On the first run we also store these as the "before" snapshot so
+  // later runs (after retraining) can be compared against them.
+  const parseTestPrompts = () =>
+    testPrompts
+      .split("\n")
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+  // The "after" completions, computed on demand when Generate is clicked.
+  const [afterResults, setAfterResults] = useState<string[][] | null>(null);
+
+  const runTest = () => {
+    const results = parseTestPrompts().map((p) =>
+      completePrompt(p.split(/\s+/), testLength, true),
+    );
+    setAfterResults(results);
+    if (!beforeResults) setBeforeResults(results); // freeze baseline on first run
+  };
+
+  const doTrain = async () => {
     setTraining(true);
     setTrained(false);
-    // Yield to the browser so the UI can show "training..." before the loop blocks.
-    setTimeout(() => {
-      const m = train(trainText, {
-        epochs,
-        onProgress: (epoch, loss) => setProgress({ epoch, loss }),
-      });
-      setModel(m);
-      setTrained(true);
-      setTraining(false);
-      reset();
-    }, 20);
+    // train() is async and yields between epochs, so the UI stays responsive
+    // (progress bar animates) even on large input.
+    const m = await train(trainText, {
+      epochs,
+      onProgress: (epoch, loss) => setProgress({ epoch, loss }),
+    });
+    setModel(m);
+    setTrained(true);
+    setTraining(false);
+    reset();
   };
 
   return (
@@ -252,348 +293,475 @@ export default function App() {
           </p>
         </header>
 
-        {/* --- Controls --- */}
-        <section className="card controls">
-          <label className="prompt-label">
-            Prompt
-            <input
-              value={promptText}
-              onChange={(e) => {
-                setPromptText(e.target.value);
-                reset();
-              }}
-              onKeyDown={(e) => e.key === "Enter" && run()}
-            />
-          </label>
-          <button onClick={run}>Complete one word →</button>
-          {generated.length > 0 && (
-            <button className="secondary" onClick={reset}>
-              Reset
-            </button>
-          )}
-        </section>
+        {/* --- Tabs --- */}
+        <nav className="tabs">
+          <button
+            className={`tab ${tab === "explore" ? "active" : ""}`}
+            onClick={() => setTab("explore")}
+          >
+            Explore
+          </button>
+          <button
+            className={`tab ${tab === "train" ? "active" : ""}`}
+            onClick={() => setTab("train")}
+          >
+            Train
+          </button>
+          <button
+            className={`tab ${tab === "test" ? "active" : ""}`}
+            onClick={() => setTab("test")}
+          >
+            Test
+          </button>
+        </nav>
 
-        {/* --- Output --- */}
-        {generated.length > 0 && (
-          <section className="card output">
-            <h2>Completion</h2>
-            <p className="generated">
-              <span className="prompt-echo">{prompt.join(" ")}</span>{" "}
-              {generated.map((w, i) => (
-                <span
-                  key={i}
-                  className={`gen-token ${i === generated.length - 1 ? "latest" : ""}`}
+        {tab === "explore" && (
+          <>
+            {/* --- Controls --- */}
+            <section className="card controls">
+              <label className="prompt-label">
+                Prompt
+                <input
+                  value={promptText}
+                  onChange={(e) => {
+                    setPromptText(e.target.value);
+                    reset();
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && run()}
+                />
+              </label>
+              <button onClick={run}>Complete one word →</button>
+              {generated.length > 0 && (
+                <button className="secondary" onClick={reset}>
+                  Reset
+                </button>
+              )}
+            </section>
+
+            {/* --- Output --- */}
+            {generated.length > 0 && (
+              <section className="card output">
+                <h2>Completion</h2>
+                <p className="generated">
+                  <span className="prompt-echo">{prompt.join(" ")}</span>{" "}
+                  {generated.map((w, i) => (
+                    <span
+                      key={i}
+                      className={`gen-token ${i === generated.length - 1 ? "latest" : ""}`}
+                    >
+                      {w}
+                    </span>
+                  ))}
+                </p>
+
+                {lastStep && (
+                  <>
+                    <h3>
+                      What the model thought before choosing &ldquo;
+                      {lastStep.token}
+                      &rdquo;
+                    </h3>
+                    <div className="probs">
+                      {lastStep.probs.map(({ word, p }) => (
+                        <ProbBar key={word} word={word} p={p} />
+                      ))}
+                    </div>
+                    <p className="note">
+                      These are the actual probabilities the model computed over
+                      its whole vocabulary. It sampled one word from this
+                      distribution. Click &ldquo;Complete one word&rdquo; again
+                      to continue.
+                    </p>
+                  </>
+                )}
+              </section>
+            )}
+
+            {/* --- How it works (accordion) --- */}
+            <section className="card">
+              <h2>How it works</h2>
+              <p className="note" style={{ marginTop: 0 }}>
+                Click any step to see what it does, with a live example from
+                your prompt.
+              </p>
+
+              <div className="accordion">
+                <Step
+                  n={1}
+                  title="Vocabulary"
+                  open={open === 1}
+                  onToggle={() => setOpen(open === 1 ? null : 1)}
                 >
-                  {w}
-                </span>
-              ))}
+                  Based on its training data, the model knows a range of words.
+                  Every word gets a number (an index). The model never sees the
+                  word <code>{model.vocab[1]}</code>; it sees{" "}
+                  <code>{index[model.vocab[1]]}</code>. This model currently
+                  knows {model.vocab.length} words:
+                  <div className="vocab-chips">
+                    {model.vocab.map((w, i) => (
+                      <span key={w} className="chip">
+                        <b>{i}</b> {w}
+                      </span>
+                    ))}
+                  </div>
+                </Step>
+
+                <Step
+                  n={2}
+                  title="Flatten"
+                  open={open === 2}
+                  onToggle={() => setOpen(open === 2 ? null : 2)}
+                >
+                  The model only understands numbers, not words, so we turn the
+                  last {model.context_size} words into one long vector of 0s and
+                  1s.
+                  <p className="note" style={{ marginTop: 8 }}>
+                    The vector has to be able to describe
+                    <i> any </i> input, and an input is always &ldquo;the last{" "}
+                    {model.context_size} words.&rdquo; For each word we need to
+                    record two things:
+                    <b> which word </b> it was ({model.vocab.length}{" "}
+                    possibilities) and <b> where </b> it sat (
+                    {model.context_size} positions). That's {model.context_size}{" "}
+                    positions × {model.vocab.length} words ={" "}
+                    {model.context_size * model.vocab.length} slots, one per
+                    question &ldquo;is word X at position Y?&rdquo; A slot is 1
+                    when true, 0 otherwise. Encoding position matters because
+                    word order changes meaning (&ldquo;dog bit man&rdquo; vs
+                    &ldquo;man bit dog&rdquo;).
+                  </p>
+                  <p className="demo-label">
+                    For your prompt, the flattened input looks like this:
+                  </p>
+                  <div
+                    className="flatten-table"
+                    style={{
+                      gridTemplateColumns: `auto repeat(${model.vocab.length}, minmax(0, 1fr))`,
+                      gridTemplateRows: `repeat(${model.context_size}, auto) auto`,
+                    }}
+                  >
+                    <div className="corner" />
+                    {model.vocab.map((w) => (
+                      <div key={w} className="col-label">
+                        {w}
+                      </div>
+                    ))}
+                    {Array.from({ length: model.context_size }).map(
+                      (_, pos) => (
+                        <Fragment key={pos}>
+                          <div className="row-label">pos {pos}</div>
+                          {Array.from({ length: model.vocab.length }).map(
+                            (_, w) => {
+                              const i = pos * model.vocab.length + w;
+                              return (
+                                <div
+                                  key={w}
+                                  className={`cell ${inputVec[i] ? "on" : "off"}`}
+                                  title={`pos ${pos}: ${model.vocab[w]}`}
+                                >
+                                  {inputVec[i]}
+                                </div>
+                              );
+                            },
+                          )}
+                        </Fragment>
+                      ),
+                    )}
+                  </div>
+                  <p className="note">
+                    Your prompt as one {model.context_size * model.vocab.length}
+                    -slot vector.
+                  </p>
+                </Step>
+
+                <Step
+                  n={3}
+                  title="Matrix multiply"
+                  open={open === 3}
+                  onToggle={() => setOpen(open === 3 ? null : 3)}
+                >
+                  To predict the next word, the model runs one operation:{" "}
+                  <code>logits = x @ W + b</code>. The flattened input{" "}
+                  <code>x</code> is multiplied by the weight table{" "}
+                  <code>W</code>, giving one raw score (a &ldquo;logit&rdquo;)
+                  for every word in the vocabulary. That's all the
+                  &ldquo;thinking.&rdquo;
+                  <p className="demo-label">
+                    The logits it computed for your prompt (top few):
+                  </p>
+                  <div className="logit-list">
+                    {logitPreview.map(({ word, val }) => (
+                      <div key={word} className="logit-row">
+                        <span className="logit-word">{word}</span>
+                        <span
+                          className={`logit-val ${val >= 0 ? "pos" : "neg"}`}
+                        >
+                          {val.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="note">
+                    Higher logit = the model thinks that word is more likely
+                    next. These raw scores aren't probabilities yet.
+                  </p>
+                </Step>
+
+                <Step
+                  n={4}
+                  title="Softmax"
+                  open={open === 4}
+                  onToggle={() => setOpen(open === 4 ? null : 4)}
+                >
+                  To create a distribution of words to pick from, the raw logits
+                  are turned into probabilities that sum to 1, using{" "}
+                  <code>e^logit</code> normalized across all words. Now each
+                  word has a share of the total.
+                  <p className="demo-label">
+                    After softmax, the same top words become:
+                  </p>
+                  <div className="prob-mini">
+                    {probPreview.map(({ word, p }) => (
+                      <div key={word} className="prob-row">
+                        <span className="prob-word">{word}</span>
+                        <div className="prob-track">
+                          <div
+                            className="prob-fill"
+                            style={{ width: `${Math.min(100, p * 100)}%` }}
+                          />
+                        </div>
+                        <span className="prob-num">
+                          {(p * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="note">
+                    These add up to 100%. They're the chances the model assigns
+                    to each possible next word.
+                  </p>
+                </Step>
+
+                <Step
+                  n={5}
+                  title="Sample"
+                  open={open === 5}
+                  onToggle={() => setOpen(open === 5 ? null : 5)}
+                >
+                  Pick one word at random, weighted by its probability. Append
+                  it to the prompt, slide the window forward by one word, and
+                  repeat. That loop is the whole completion.
+                  <p className="demo-label">
+                    {hasCompletion
+                      ? `Latest roll (after “${prompt.join(" ")} ${generated.slice(0, -1).join(" ")}”) picked:`
+                      : "One roll of the dice for your prompt picked:"}
+                  </p>
+                  <div className="sample-result">
+                    <span className="gen-token">{sampledWord}</span>
+                    <span className="sample-p">
+                      with {(sampledP * 100).toFixed(1)}% chance
+                    </span>
+                  </div>
+                  <div className="prob-mini">
+                    {sampleDist.slice(0, 5).map(({ word, p }) => (
+                      <div key={word} className="prob-row">
+                        <span className="prob-word">{word}</span>
+                        <div className="prob-track">
+                          <div className="prob-fill" style={{ width: `${Math.min(100, p * 100)}%` }} />
+                        </div>
+                        <span className="prob-num">{(p * 100).toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="note">
+                    Run &ldquo;Complete one word&rdquo; above and this updates
+                    with each new word.
+                  </p>
+                </Step>
+              </div>
+            </section>
+          </>
+        )}
+
+        {tab === "train" && (
+          <>
+            {/* --- Train your own --- */}
+            <section className="card trainer">
+              <h2>Train your own</h2>
+              <p className="note">
+                Type some sentences, hit Train, and watch a brand-new weight
+                table get learned right here in your browser. Then use the test
+                tab to try it out!
+              </p>
+              <textarea
+                value={trainText}
+                onChange={(e) => setTrainText(e.target.value)}
+                rows={6}
+                placeholder="one sentence per line…"
+              />
+              <div className="train-controls">
+                <label>
+                  <span className="field-title">
+                    Epochs
+                    <button
+                      className="info-btn"
+                      onClick={() => setShowEpochInfo((s) => !s)}
+                      aria-label="What are epochs?"
+                    >
+                      <span>?</span>
+                    </button>
+                  </span>
+                  <input
+                    type="number"
+                    min={10}
+                    max={2000}
+                    step={10}
+                    value={epochs}
+                    onChange={(e) => setEpochs(Number(e.target.value))}
+                  />
+                </label>
+                <button onClick={doTrain} disabled={training}>
+                  {training ? "Training…" : trained ? "Retrain" : "Train"}
+                </button>
+              </div>
+
+              {showEpochInfo && (
+                <div className="epoch-popup">
+                  <b>What are epochs?</b> One epoch is one full pass through all
+                  your sentences. During each pass the model predicts every
+                  word, measures how wrong it was (the <i>loss</i>), and nudges
+                  its weights a little to do better next time. More epochs =
+                  more passes = more learning, but with diminishing returns:
+                  eventually the loss stops dropping and extra epochs just
+                  overfit the tiny dataset. Watch the loss fall as the epochs
+                  tick by.
+                  <button
+                    className="popup-close"
+                    onClick={() => setShowEpochInfo(false)}
+                  >
+                    Got it
+                  </button>
+                </div>
+              )}
+
+              {training && progress && (
+                <div className="train-progress">
+                  <div className="track">
+                    <div
+                      className="fill"
+                      style={{
+                        width: `${((progress.epoch + 1) / epochs) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <span>
+                    epoch {progress.epoch + 1}/{epochs} ·
+                    <button
+                      className="info-btn inline"
+                      onClick={() => setShowLossInfo((s) => !s)}
+                      aria-label="What is loss?"
+                    >
+                      <span>?</span>
+                    </button>
+                    loss {progress.loss.toFixed(4)}
+                  </span>
+                </div>
+              )}
+
+              {showLossInfo && (
+                <div className="epoch-popup">
+                  <b>What is loss?</b> Loss is the model's &ldquo;how wrong am
+                  I? &rdquo; score: a single number measuring how far off its
+                  predictions are from the correct next words. It's basically
+                  the negative log of the probability it assigned to the right
+                  word, averaged over all of them. High at first (weights are
+                  random), then it falls as each epoch nudges the weights so
+                  correct words get higher probability. The model trains by
+                  making this number go down.
+                  <button
+                    className="popup-close"
+                    onClick={() => setShowLossInfo(false)}
+                  >
+                    Got it
+                  </button>
+                </div>
+              )}
+
+              {trained && !training && (
+                <p className="trained-note">
+                  ✓ Trained a new model with {getModel().vocab.length} words.
+                  Try completing above.
+                </p>
+              )}
+            </section>
+          </>
+        )}
+
+        {tab === "test" && (
+          <section className="card test">
+            <h2>Test bench</h2>
+            <p className="note">
+              Paste some training text about a topic in the Train tab, then come
+              back here and compare how the model completes these prompts before
+              vs after it learned your text.
             </p>
 
-            {lastStep && (
-              <>
-                <h3>
-                  What the model thought before choosing &ldquo;{lastStep.token}
-                  &rdquo;
-                </h3>
-                <div className="probs">
-                  {lastStep.probs.map(({ word, p }) => (
-                    <ProbBar key={word} word={word} p={p} />
+            <label className="test-label">
+              Test prompts (one per line)
+              <textarea
+                value={testPrompts}
+                onChange={(e) => setTestPrompts(e.target.value)}
+                rows={4}
+              />
+            </label>
+            <div className="test-controls">
+              <label>
+                Words per prompt
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={testLength}
+                  onChange={(e) => setTestLength(Number(e.target.value))}
+                />
+              </label>
+              <button onClick={captureBefore}>Generate completions</button>
+            </div>
+
+            {afterResults && (
+              <table className="test-table">
+                <thead>
+                  <tr>
+                    <th>Prompt</th>
+                    <th>Before</th>
+                    <th>After (current model)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parseTestPrompts().map((p, i) => (
+                    <tr key={i}>
+                      <td className="test-prompt">{p}</td>
+                      <td className="test-before">
+                        {beforeResults ? beforeResults[i].join(" ") : "—"}
+                      </td>
+                      <td className="test-after">
+                        {afterResults[i].join(" ")}
+                      </td>
+                    </tr>
                   ))}
-                </div>
-                <p className="note">
-                  These are the actual probabilities the model computed over its
-                  whole vocabulary. It sampled one word from this distribution.
-                  Click &ldquo;Complete one word&rdquo; again to continue.
-                </p>
-              </>
+                </tbody>
+              </table>
+            )}
+
+            {beforeResults && (
+              <p className="note">
+                The <b>Before</b> column is frozen from your first run; the{" "}
+                <b>After</b> column reflects the current model. Retrain on new
+                text and watch the After column change while Before stays put.
+              </p>
             )}
           </section>
         )}
-
-        {/* --- How it works (accordion) --- */}
-        <section className="card">
-          <h2>How it works</h2>
-          <p className="note" style={{ marginTop: 0 }}>
-            Click any step to see what it does, with a live example from your
-            prompt.
-          </p>
-
-          <div className="accordion">
-            <Step
-              n={1}
-              title="Vocabulary"
-              open={open === 1}
-              onToggle={() => setOpen(open === 1 ? null : 1)}
-            >
-              Every word gets a number (an index). The model never sees the word{" "}
-              <code>{model.vocab[1]}</code>; it sees{" "}
-              <code>{index[model.vocab[1]]}</code>. This model knows{" "}
-              {model.vocab.length} words:
-              <div className="vocab-chips">
-                {model.vocab.map((w, i) => (
-                  <span key={w} className="chip">
-                    <b>{i}</b> {w}
-                  </span>
-                ))}
-              </div>
-            </Step>
-
-            <Step
-              n={2}
-              title="Flatten"
-              open={open === 2}
-              onToggle={() => setOpen(open === 2 ? null : 2)}
-            >
-              The model only understands numbers, not words, so we turn the last{" "}
-              {model.context_size} words into one long vector of 0s and 1s.
-              <p className="note" style={{ marginTop: 8 }}>
-                The vector has to be able to describe
-                <i> any </i> input, and an input is always &ldquo;the last{" "}
-                {model.context_size} words.&rdquo; For each word we need to
-                record two things:
-                <b> which word </b> it was ({model.vocab.length} possibilities)
-                and <b> where </b> it sat ({model.context_size} positions).
-                That's {model.context_size} positions × {model.vocab.length}{" "}
-                words = {model.context_size * model.vocab.length} slots, one per
-                question &ldquo;is word X at position Y?&rdquo; A slot is 1 when
-                true, 0 otherwise. Encoding position matters because word order
-                changes meaning (&ldquo;dog bit man&rdquo; vs &ldquo;man bit
-                dog&rdquo;).
-              </p>
-              <p className="demo-label">
-                For your prompt, the flattened input looks like this:
-              </p>
-              <div
-                className="flatten-table"
-                style={{
-                  gridTemplateColumns: `auto repeat(${model.vocab.length}, minmax(0, 1fr))`,
-                  gridTemplateRows: `repeat(${model.context_size}, auto) auto`,
-                }}
-              >
-                <div className="corner" />
-                {model.vocab.map((w) => (
-                  <div key={w} className="col-label">
-                    {w}
-                  </div>
-                ))}
-                {Array.from({ length: model.context_size }).map((_, pos) => (
-                  <Fragment key={pos}>
-                    <div className="row-label">pos {pos}</div>
-                    {Array.from({ length: model.vocab.length }).map((_, w) => {
-                      const i = pos * model.vocab.length + w;
-                      return (
-                        <div
-                          key={w}
-                          className={`cell ${inputVec[i] ? "on" : "off"}`}
-                          title={`pos ${pos}: ${model.vocab[w]}`}
-                        >
-                          {inputVec[i]}
-                        </div>
-                      );
-                    })}
-                  </Fragment>
-                ))}
-              </div>
-              <p className="note">
-                Your prompt as one {model.context_size * model.vocab.length}
-                -slot vector.
-              </p>
-            </Step>
-
-            <Step
-              n={3}
-              title="Matrix multiply"
-              open={open === 3}
-              onToggle={() => setOpen(open === 3 ? null : 3)}
-            >
-              One operation: <code>logits = x @ W + b</code>. The flattened
-              input <code>x</code> is multiplied by the weight table{" "}
-              <code>W</code>, giving one raw score (a &ldquo;logit&rdquo;) for
-              every word in the vocabulary. That's all the
-              &ldquo;thinking.&rdquo;
-              <p className="demo-label">
-                The logits it computed for your prompt (top few):
-              </p>
-              <div className="logit-list">
-                {logitPreview.map(({ word, val }) => (
-                  <div key={word} className="logit-row">
-                    <span className="logit-word">{word}</span>
-                    <span className={`logit-val ${val >= 0 ? "pos" : "neg"}`}>
-                      {val.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <p className="note">
-                Higher logit = the model thinks that word is more likely next.
-                These raw scores aren't probabilities yet.
-              </p>
-            </Step>
-
-            <Step
-              n={4}
-              title="Softmax"
-              open={open === 4}
-              onToggle={() => setOpen(open === 4 ? null : 4)}
-            >
-              Turn the raw logits into probabilities that sum to 1, using{" "}
-              <code>e^logit</code> normalized across all words. Now each word
-              has a share of the total.
-              <p className="demo-label">
-                After softmax, the same top words become:
-              </p>
-              <div className="prob-mini">
-                {probPreview.map(({ word, p }) => (
-                  <div key={word} className="prob-row">
-                    <span className="prob-word">{word}</span>
-                    <div className="prob-track">
-                      <div
-                        className="prob-fill"
-                        style={{ width: `${Math.min(100, p * 100)}%` }}
-                      />
-                    </div>
-                    <span className="prob-num">{(p * 100).toFixed(1)}%</span>
-                  </div>
-                ))}
-              </div>
-              <p className="note">
-                These add up to 100%. They're the chances the model assigns to
-                each possible next word.
-              </p>
-            </Step>
-
-            <Step
-              n={5}
-              title="Sample"
-              open={open === 5}
-              onToggle={() => setOpen(open === 5 ? null : 5)}
-            >
-              Pick one word at random, weighted by its probability. Append it to
-              the prompt, slide the window forward by one word, and repeat. That
-              loop is the whole completion.
-              <p className="demo-label">
-                One roll of the dice for your prompt picked:
-              </p>
-              <div className="sample-result">
-                <span className="gen-token">{sampledWord}</span>
-                <span className="sample-p">
-                  with {(sampledP * 100).toFixed(1)}% chance
-                </span>
-              </div>
-              <p className="note">
-                Run &ldquo;Complete →&rdquo; above and you'll see this repeated,
-                word after word.
-              </p>
-            </Step>
-          </div>
-        </section>
-
-        {/* --- Train your own --- */}
-        <section className="card trainer">
-          <h2>Train your own</h2>
-          <p className="note">
-            Type some sentences, hit Train, and watch a brand-new weight table
-            get learned right here in your browser. Then use the prompt box
-            above to complete against it.
-          </p>
-          <textarea
-            value={trainText}
-            onChange={(e) => setTrainText(e.target.value)}
-            rows={6}
-            placeholder="one sentence per line…"
-          />
-          <div className="train-controls">
-            <label>
-              <span className="field-title">
-                Epochs
-                <button
-                  className="info-btn"
-                  onClick={() => setShowEpochInfo((s) => !s)}
-                  aria-label="What are epochs?"
-                >
-                  <span>?</span>
-                </button>
-              </span>
-              <input
-                type="number"
-                min={10}
-                max={2000}
-                step={10}
-                value={epochs}
-                onChange={(e) => setEpochs(Number(e.target.value))}
-              />
-            </label>
-            <button onClick={doTrain} disabled={training}>
-              {training ? "Training…" : trained ? "Retrain" : "Train"}
-            </button>
-          </div>
-
-          {showEpochInfo && (
-            <div className="epoch-popup">
-              <b>What are epochs?</b> One epoch is one full pass through all
-              your sentences. During each pass the model predicts every word,
-              measures how wrong it was (the <i>loss</i>), and nudges its
-              weights a little to do better next time. More epochs = more passes
-              = more learning, but with diminishing returns: eventually the loss
-              stops dropping and extra epochs just overfit the tiny dataset.
-              Watch the loss fall as the epochs tick by.
-              <button
-                className="popup-close"
-                onClick={() => setShowEpochInfo(false)}
-              >
-                Got it
-              </button>
-            </div>
-          )}
-
-          {training && progress && (
-            <div className="train-progress">
-              <div className="track">
-                <div
-                  className="fill"
-                  style={{ width: `${((progress.epoch + 1) / epochs) * 100}%` }}
-                />
-              </div>
-              <span>
-                epoch {progress.epoch + 1}/{epochs} ·
-                <button
-                  className="info-btn inline"
-                  onClick={() => setShowLossInfo((s) => !s)}
-                  aria-label="What is loss?"
-                >
-                  <span>?</span>
-                </button>
-                loss {progress.loss.toFixed(4)}
-              </span>
-            </div>
-          )}
-
-          {showLossInfo && (
-            <div className="epoch-popup">
-              <b>What is loss?</b> Loss is the model's &ldquo;how wrong am I?
-              &rdquo; score: a single number measuring how far off its
-              predictions are from the correct next words. It's basically the
-              negative log of the probability it assigned to the right word,
-              averaged over all of them. High at first (weights are random),
-              then it falls as each epoch nudges the weights so correct words
-              get higher probability. The model trains by making this number go
-              down.
-              <button
-                className="popup-close"
-                onClick={() => setShowLossInfo(false)}
-              >
-                Got it
-              </button>
-            </div>
-          )}
-
-          {trained && !training && (
-            <p className="trained-note">
-              ✓ Trained a new model with {getModel().vocab.length} words. Try
-              completing above.
-            </p>
-          )}
-        </section>
 
         <footer className="foot">
           Default model trained on 14 sentences about cats, dogs, mats and

@@ -125,6 +125,45 @@ export function nextWord(context: string[]): Step {
 }
 
 /**
+ * Generate a full completion of `n` words from a prompt using the active
+ * model. Returns just the generated words (no per-step detail), for use in
+ * batch comparisons like the Test bench.
+ *
+ * When `greedy` is true it always picks the most probable word, so completions
+ * are deterministic: the only thing that changes between runs is the weights,
+ * which makes before/after comparisons clean.
+ */
+export function completePrompt(prompt: string[], n: number, greedy = false): string[] {
+  let context = [...prompt];
+  const out: string[] = [];
+  const vocab = model.vocab;
+  const V = vocab.length;
+  for (let i = 0; i < n; i++) {
+    let tokens = context.slice(-model.context_size);
+    while (tokens.length < model.context_size) tokens = ["pad", ...tokens];
+    const x = flatten(tokens);
+    const probs = softmax(logits(x));
+    let chosen: number;
+    if (greedy) {
+      chosen = 0;
+      for (let k = 1; k < V; k++) if (probs[k] > probs[chosen]) chosen = k;
+    } else {
+      let r = Math.random();
+      chosen = 0;
+      for (let k = 0; k < V; k++) {
+        r -= probs[k];
+        if (r <= 0) { chosen = k; break; }
+        chosen = k;
+      }
+    }
+    const token = vocab[chosen];
+    out.push(token);
+    context = [...context, token];
+  }
+  return out;
+}
+
+/**
  * Generate `n` words from a prompt using the active model, recording the
  * probability distribution at every step so the UI can illustrate what the
  * model "thought".
