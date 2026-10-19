@@ -180,15 +180,22 @@ export default function App() {
 
   const model = getModel();
 
-  // The flattened input vector for the current prompt (for the flatten demo).
+  // Live context: prompt plus any words generated so far. Steps 2-5 all use
+  // this so they update together as you complete more words.
+  const liveContext = useMemo(
+    () => [...prompt, ...generated],
+    [prompt, generated],
+  );
+
+  // The flattened input vector for the current context (for the flatten demo).
   const inputVec = useMemo(() => {
-    let toks = prompt.slice(-model.context_size);
+    let toks = liveContext.slice(-model.context_size);
     while (toks.length < model.context_size) toks = ["pad", ...toks];
     return toInputVector(toks);
-  }, [prompt, model]);
+  }, [liveContext, model]);
 
-  // Live logits + probabilities for the current prompt (for steps 3-5).
-  const dist = useMemo(() => nextWordDistribution(prompt), [prompt, model]);
+  // Live logits + probabilities for the current context (for steps 3-5).
+  const dist = useMemo(() => nextWordDistribution(liveContext), [liveContext, model]);
   const index = useMemo(
     () => Object.fromEntries(model.vocab.map((w, i) => [w, i])),
     [model],
@@ -540,7 +547,7 @@ export default function App() {
                   for every word in the vocabulary. That's all the
                   &ldquo;thinking.&rdquo;
                   <p className="demo-label">
-                    The logits it computed for your prompt (top few):
+                    The logits it computed for the current context (top few):
                   </p>
                   <div className="logit-list">
                     {logitPreview.map(({ word, val }) => (
