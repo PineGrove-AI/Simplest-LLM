@@ -7,25 +7,23 @@ import {
   nextWordDistribution,
   nextWord,
   completePrompt,
+  completePromptWith,
+  defaultModel,
 } from "./model";
 import { train } from "./trainer";
 import JsonViewer from "@andypf/json-viewer/dist/esm/react/JsonViewer";
 import "./App.css";
 
-const DEFAULT_TEXT = `the cat sat on the mat
-the dog sat on the mat
-the cat sat on a mat
-the dog sat on a mat
-the cat is on the mat
-the dog is on the mat
-a cat sat on the mat
-a dog sat on the mat
-the cat sat in the house
-the dog sat in the house
-the cat is in the house
-the dog is in the house
-a cat sat in the house
-a dog sat in the house`;
+const DEFAULT_TEXT = `the cat chased the bird in the garden
+the dog chased the bird in the garden
+the cat slept on the couch in the living room
+the dog slept on the couch in the living room
+the cat drank milk from the bowl
+the dog drank water from the bowl
+the big cat pounced on the mouse
+the small dog barked at the mailman
+the cat played with the ball in the yard
+the dog fetched the stick from the park`;
 
 // A single probability bar for one candidate word.
 function ProbBar({ word, p }: { word: string; p: number }) {
@@ -163,12 +161,9 @@ export default function App() {
 
   // Test bench state.
   const [testPrompts, setTestPrompts] = useState(
-    "the cat\nthe dog sat\na cat is on\nthe dog",
+    "the cat\nthe dog",
   );
   const [testLength, setTestLength] = useState(5);
-  // The "before" snapshot: completions captured the first time we run, so they
-  // stay fixed while the user retrains and compares against the new output.
-  const [beforeResults, setBeforeResults] = useState<string[][] | null>(null);
 
   // Which "How it works" step is expanded (null = all closed).
   const [open, setOpen] = useState<number | null>(null);
@@ -244,9 +239,8 @@ export default function App() {
     setLastStep(null);
   };
 
-  // Test bench: generate completions for every test prompt using the current
-  // model. The "before" snapshot is captured automatically at train time (with
-  // the pre-training model), so the table shows a true before/after comparison.
+  // Test bench: the "before" column always shows what the stock (default)
+  // model produces, giving a stable benchmark regardless of retraining.
   const parseTestPrompts = () =>
     testPrompts
       .split("\n")
@@ -263,16 +257,18 @@ export default function App() {
     setAfterResults(results);
   };
 
+  // "Before" completions: always computed from the stock model so they're
+  // deterministic and don't depend on training history.
+  const beforeResults = useMemo(() => {
+    if (!afterResults) return null;
+    return parseTestPrompts().map((p) =>
+      completePromptWith(defaultModel, p.split(/\s+/), testLength),
+    );
+  }, [afterResults, testPrompts, testLength]);
+
   const doTrain = async () => {
     setTraining(true);
     setTrained(false);
-    // Capture the "before" snapshot with the current (pre-training) model so
-    // the Test tab can show a true before/after comparison.
-    const prompts = parseTestPrompts();
-    if (prompts.length > 0) {
-      const before = prompts.map((p) => completePrompt(p.split(/\s+/), testLength, true));
-      setBeforeResults(before);
-    }
     // train() is async and yields between epochs, so the UI stays responsive
     // (progress bar animates) even on large input.
     const m = await train(trainText, {
@@ -821,9 +817,10 @@ export default function App() {
 
             {beforeResults && (
               <p className="note">
-                The <b>Before</b> column is frozen from your first run; the{" "}
-                <b>After</b> column reflects the current model. Retrain on new
-                text and watch the After column change while Before stays put.
+                The <b>Before</b> column always shows what the stock model
+                (the one this page loads with) produces. The <b>After</b>{" "}
+                column reflects your current model. Retrain on new text and
+                watch the After column change while Before stays the same.
               </p>
             )}
           </section>

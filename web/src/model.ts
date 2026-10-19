@@ -17,8 +17,12 @@ export interface Model {
   b: number[];
 }
 
+// The stock model that ships with the page (from model.json). Exported so the
+// UI can always show what the default model produces, regardless of retraining.
+export const defaultModel: Model = rawModel as unknown as Model;
+
 // The active model lives in a mutable slot so we can hot-swap it after training.
-let model: Model = rawModel as unknown as Model;
+let model: Model = defaultModel;
 
 /** Replace the active model (e.g. with a freshly trained one). */
 export function setModel(m: Model): void {
@@ -156,6 +160,42 @@ export function completePrompt(prompt: string[], n: number, greedy = false): str
         chosen = k;
       }
     }
+    const token = vocab[chosen];
+    out.push(token);
+    context = [...context, token];
+  }
+  return out;
+}
+
+/**
+ * Greedy completion against an explicit model (not the active one). Used to
+ * produce the fixed "before" benchmark from the stock model.
+ */
+export function completePromptWith(m: Model, prompt: string[], n: number): string[] {
+  let context = [...prompt];
+  const out: string[] = [];
+  const vocab = m.vocab;
+  const V = vocab.length;
+  const index = new Map(vocab.map((w, i) => [w, i]));
+  for (let i = 0; i < n; i++) {
+    let tokens = context.slice(-m.context_size);
+    while (tokens.length < m.context_size) tokens = ["pad", ...tokens];
+    // Build input vector against this model's vocab.
+    const x = new Array(m.context_size * V).fill(0);
+    tokens.forEach((tok, pos) => {
+      const idx = index.get(tok);
+      if (idx !== undefined) x[pos * V + idx] = 1;
+    });
+    // Forward pass.
+    const logitsArr = new Array(V).fill(0);
+    for (let o = 0; o < V; o++) {
+      let acc = m.b[o];
+      for (let k = 0; k < x.length; k++) acc += m.W[k][o] * x[k];
+      logitsArr[o] = acc;
+    }
+    const probs = softmax(logitsArr);
+    let chosen = 0;
+    for (let k = 1; k < V; k++) if (probs[k] > probs[chosen]) chosen = k;
     const token = vocab[chosen];
     out.push(token);
     context = [...context, token];
