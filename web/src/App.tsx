@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   setModel,
@@ -67,6 +67,10 @@ function Step({
 
 // Max rows to render in the JSON viewer before truncating.
 const MAX_JSON_ROWS = 50;
+
+// Below this width the model.json panel becomes a bottom sheet instead of a
+// sidebar. Keep in sync with the media query in App.css.
+const MOBILE_QUERY = "(max-width: 900px)";
 
 /**
  * Build a display-friendly copy of the model, truncating W and b when they
@@ -153,8 +157,24 @@ export default function App() {
   const [showEpochInfo, setShowEpochInfo] = useState(false);
   const [showLossInfo, setShowLossInfo] = useState(false);
 
-  // Left panel: show the live model.json.
-  const [showModel, setShowModel] = useState(true);
+  // Left panel: show the live model.json. Open by default on desktop, closed
+  // on mobile where it would cover the whole page.
+  const [showModel, setShowModel] = useState(
+    () => !window.matchMedia(MOBILE_QUERY).matches,
+  );
+
+  // On mobile the panel is a modal sheet: lock page scroll and close on Escape.
+  useEffect(() => {
+    if (!showModel || !window.matchMedia(MOBILE_QUERY).matches) return;
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && setShowModel(false);
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [showModel]);
 
   // Active tab: explore | train | test.
   const [tab, setTab] = useState<"explore" | "train" | "test">("explore");
@@ -286,10 +306,17 @@ export default function App() {
   return (
     <div className="layout">
       {/* --- Collapsible left panel: the file of math --- */}
+      {/* On mobile this is a bottom sheet; the backdrop closes it. */}
+      {showModel && (
+        <div className="side-backdrop" onClick={() => setShowModel(false)} />
+      )}
       <aside className={`side ${showModel ? "open" : "closed"}`}>
         <button className="side-toggle" onClick={() => setShowModel((s) => !s)}>
-          {showModel ? "◀" : "▶"}{" "}
+          <span className="toggle-arrow">{showModel ? "◀" : "▶"} </span>
           <span className="toggle-label">model.json</span>
+          <span className="toggle-close" aria-label="Close">
+            ✕
+          </span>
         </button>
         {showModel && (
           <div className="side-body">
@@ -340,6 +367,13 @@ export default function App() {
           </div>
         )}
       </aside>
+
+      {/* Mobile-only: floating button to open the model.json sheet. */}
+      {!showModel && (
+        <button className="model-fab" onClick={() => setShowModel(true)}>
+          {"{ }"} model.json
+        </button>
+      )}
 
       <div className="app">
         <header className="hero">
@@ -498,40 +532,42 @@ export default function App() {
                   <p className="demo-label">
                     For your prompt, the flattened input looks like this:
                   </p>
-                  <div
-                    className="flatten-table"
-                    style={{
-                      gridTemplateColumns: `auto repeat(${model.vocab.length}, minmax(0, 1fr))`,
-                      gridTemplateRows: `repeat(${model.context_size}, auto) auto`,
-                    }}
-                  >
-                    <div className="corner" />
-                    {model.vocab.map((w) => (
-                      <div key={w} className="col-label">
-                        {w}
-                      </div>
-                    ))}
-                    {Array.from({ length: model.context_size }).map(
-                      (_, pos) => (
-                        <Fragment key={pos}>
-                          <div className="row-label">pos {pos}</div>
-                          {Array.from({ length: model.vocab.length }).map(
-                            (_, w) => {
-                              const i = pos * model.vocab.length + w;
-                              return (
-                                <div
-                                  key={w}
-                                  className={`cell ${inputVec[i] ? "on" : "off"}`}
-                                  title={`pos ${pos}: ${model.vocab[w]}`}
-                                >
-                                  {inputVec[i]}
-                                </div>
-                              );
-                            },
-                          )}
-                        </Fragment>
-                      ),
-                    )}
+                  <div className="flatten-scroll">
+                    <div
+                      className="flatten-table"
+                      style={{
+                        gridTemplateColumns: `auto repeat(${model.vocab.length}, minmax(var(--cell-min, 0px), 1fr))`,
+                        gridTemplateRows: `repeat(${model.context_size}, auto) auto`,
+                      }}
+                    >
+                      <div className="corner" />
+                      {model.vocab.map((w) => (
+                        <div key={w} className="col-label">
+                          {w}
+                        </div>
+                      ))}
+                      {Array.from({ length: model.context_size }).map(
+                        (_, pos) => (
+                          <Fragment key={pos}>
+                            <div className="row-label">pos {pos}</div>
+                            {Array.from({ length: model.vocab.length }).map(
+                              (_, w) => {
+                                const i = pos * model.vocab.length + w;
+                                return (
+                                  <div
+                                    key={w}
+                                    className={`cell ${inputVec[i] ? "on" : "off"}`}
+                                    title={`pos ${pos}: ${model.vocab[w]}`}
+                                  >
+                                    {inputVec[i]}
+                                  </div>
+                                );
+                              },
+                            )}
+                          </Fragment>
+                        ),
+                      )}
+                    </div>
                   </div>
                   <p className="note">
                     Your prompt as one {model.context_size * model.vocab.length}
@@ -814,28 +850,30 @@ export default function App() {
             </div>
 
             {afterResults && (
-              <table className="test-table">
-                <thead>
-                  <tr>
-                    <th>Prompt</th>
-                    <th>Before</th>
-                    <th>After (current model)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parseTestPrompts().map((p, i) => (
-                    <tr key={i}>
-                      <td className="test-prompt">{p}</td>
-                      <td className="test-before">
-                        {beforeResults ? beforeResults[i].join(" ") : "—"}
-                      </td>
-                      <td className="test-after">
-                        {afterResults[i].join(" ")}
-                      </td>
+              <div className="test-scroll">
+                <table className="test-table">
+                  <thead>
+                    <tr>
+                      <th>Prompt</th>
+                      <th>Before</th>
+                      <th>After (current model)</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {parseTestPrompts().map((p, i) => (
+                      <tr key={i}>
+                        <td className="test-prompt">{p}</td>
+                        <td className="test-before">
+                          {beforeResults ? beforeResults[i].join(" ") : "—"}
+                        </td>
+                        <td className="test-after">
+                          {afterResults[i].join(" ")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             {beforeResults && (

@@ -668,3 +668,135 @@
 .test-prompt { color: #999; }
 .test-before { color: #666; }
 .test-after { color: #3730a3; font-weight: 600; }
+
+/* Mobile-only pieces, hidden on desktop. */
+.side-backdrop,
+.toggle-close,
+.model-fab {
+  display: none;
+}
+.flatten-scroll,
+.test-scroll {
+  overflow-x: auto;
+}
+
+/* --- Mobile: model.json becomes a bottom sheet --- */
+/* Keep in sync with MOBILE_QUERY in App.tsx. */
+@media (max-width: 900px) {
+  .layout {
+    display: block;
+  }
+
+  .side,
+  .side.closed {
+    display: none;
+  }
+  .side.open {
+    display: flex;
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: 100%;
+    height: 85vh;
+    height: 85dvh;
+    border-right: none;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.3);
+    animation: sheet-up 0.2s ease-out;
+  }
+  .side-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .side-toggle {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    font-size: 0.95rem;
+    border-bottom: 1px solid #313244;
+  }
+  .toggle-arrow {
+    display: none;
+  }
+  .toggle-label {
+    flex: 1;
+  }
+  .toggle-close {
+    display: inline;
+    font-size: 1.1rem;
+    color: #a6adc8;
+  }
+  .side-body {
+    padding-top: 10px;
+    overscroll-behavior: contain;
+  }
+  .side-note {
+    font-size: 0.88rem;
+  }
+  .legend-row span {
+    font-size: 0.85rem;
+  }
+
+  .model-fab {
+    display: block;
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 10;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 999px;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+  }
+
+  /* General content tightening for narrow screens. */
+  .app {
+    padding: 24px 16px 80px;
+  }
+  .hero h1 {
+    font-size: 1.6rem;
+  }
+  .sub {
+    font-size: 1rem;
+  }
+  .card {
+    padding: 16px;
+  }
+  .step-body {
+    padding: 4px 14px 16px;
+  }
+  .flatten-table {
+    --cell-min: 24px;
+  }
+  .controls .prompt-label {
+    flex-basis: 100%;
+  }
+  .controls button {
+    flex: 1;
+  }
+  .test-controls,
+  .train-controls {
+    flex-wrap: wrap;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
