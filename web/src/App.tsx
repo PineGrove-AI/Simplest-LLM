@@ -160,9 +160,7 @@ export default function App() {
   const [tab, setTab] = useState<"explore" | "train" | "test">("explore");
 
   // Test bench state.
-  const [testPrompts, setTestPrompts] = useState(
-    "the cat\nthe dog",
-  );
+  const [testPrompts, setTestPrompts] = useState("the cat\nthe dog");
   const [testLength, setTestLength] = useState(5);
 
   // Which "How it works" step is expanded (null = all closed).
@@ -190,7 +188,10 @@ export default function App() {
   }, [liveContext, model]);
 
   // Live logits + probabilities for the current context (for steps 3-5).
-  const dist = useMemo(() => nextWordDistribution(liveContext), [liveContext, model]);
+  const dist = useMemo(
+    () => nextWordDistribution(liveContext),
+    [liveContext, model],
+  );
   const index = useMemo(
     () => Object.fromEntries(model.vocab.map((w, i) => [w, i])),
     [model],
@@ -344,8 +345,10 @@ export default function App() {
         <header className="hero">
           <h1>The simplest possible LLM</h1>
           <p className="sub">
-            A vocabulary, learned weights and one line of math producing
-            completions.
+            This website represents the simplest possible LLM, running and
+            training right here in your browser. It consists of a vocabulary,
+            where each word has weights for the likelihood of following words
+            from the vocabulary, which is used to calculate completions.
           </p>
         </header>
 
@@ -817,10 +820,10 @@ export default function App() {
 
             {beforeResults && (
               <p className="note">
-                The <b>Before</b> column always shows what the stock model
-                (the one this page loads with) produces. The <b>After</b>{" "}
-                column reflects your current model. Retrain on new text and
-                watch the After column change while Before stays the same.
+                The <b>Before</b> column always shows what the stock model (the
+                one this page loads with) produces. The <b>After</b> column
+                reflects your current model. Retrain on new text and watch the
+                After column change while Before stays the same.
               </p>
             )}
           </section>
