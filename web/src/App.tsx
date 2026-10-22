@@ -316,18 +316,18 @@ export default function App() {
                 <span>
                   the weights: {model.W.length * model.vocab.length} numbers
                   arranged as {model.context_size}×{model.vocab.length} rows by{" "}
-                  {model.vocab.length} columns. Each row is one &ldquo;word at a
-                  position&rdquo;; its {model.vocab.length} values are how much
-                  that input pushes the score for each possible next word.
+                  {model.vocab.length} columns. Each row represents a word at a
+                  given position, and its values indicate the probability of
+                  each other word from the vocabulary being the next word. These
+                  probabilites are what allow for text prediction.
                 </span>
               </div>
               <div className="legend-row">
                 <code>b</code>
                 <span>
-                  a starting bias: one number per word, added to its score
-                  before softmax. It's a context-free baseline, so some words
-                  begin ahead of others even when the input gives no strong
-                  signal.
+                  a starting bias: one number per word, added to it during
+                  prediction calculations. This allows some words to begin ahead
+                  of others even when the input gives no strong signal.
                 </span>
               </div>
             </div>
