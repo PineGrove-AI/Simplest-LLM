@@ -344,9 +344,11 @@ export default function App() {
                   the weights: {model.W.length * model.vocab.length} numbers
                   arranged as {model.context_size}×{model.vocab.length} rows by{" "}
                   {model.vocab.length} columns. Each row represents a word at a
-                  given position, and its values indicate the probability of
-                  each other word from the vocabulary being the next word. These
-                  probabilites are what allow for text prediction.
+                  given position, and its values are scores for each word in the
+                  vocabulary being the next word: positive makes that word more
+                  likely, negative makes it less likely, and near zero means no
+                  effect. These scores are not probabilities themselves; they
+                  are turned into probabilities during prediction.
                 </span>
               </div>
               <div className="legend-row">
@@ -584,11 +586,12 @@ export default function App() {
                   To predict the next word, the model runs one operation:{" "}
                   <code>logits = x @ W + b</code>. The flattened input{" "}
                   <code>x</code> is multiplied by the weight table{" "}
-                  <code>W</code> which expresses the probability of other words
-                  in the vocabulary following a given word. This operation
-                  produces one raw probability score (a &ldquo;logit&rdquo;) for
-                  every word in the vocabulary. That's all the
-                  &ldquo;thinking.&rdquo;
+                  <code>W</code>, which holds a score for how much each context
+                  word pushes every vocabulary word up (positive) or down
+                  (negative) as the next word. Adding up those pushes, plus the
+                  bias <code>b</code>, gives one raw score (a
+                  &ldquo;logit&rdquo;) for every word in the vocabulary. That's
+                  all the &ldquo;thinking.&rdquo;
                   <p className="demo-label">
                     The logits it computed for the current context (top few):
                   </p>
@@ -706,8 +709,8 @@ export default function App() {
                 probabilities
                 <br />
                 When you run your training, the model will run its completion
-                function in a loop, adjusting the probability weights each time
-                its patterns don't match the ones in your training data.
+                function in a loop, adjusting the weights each time its patterns
+                don't match the ones in your training data.
               </p>
               <p className="note">
                 After running your training, you can use the Test tab to see the
