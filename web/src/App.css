@@ -250,6 +250,21 @@
   color: #6366f1;
   margin-right: 4px;
 }
+.pad-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: #d4d4d8;
+  color: #52525b;
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: middle;
+}
 
 .logit-list {
   display: flex;

@@ -460,6 +460,14 @@ export default function App() {
                     {model.vocab.map((w, i) => (
                       <span key={w} className="chip">
                         <b>{i}</b> {w}
+                        {w === "pad" && (
+                          <span
+                            className="pad-help"
+                            title="A padding token used to fill empty slots when fewer than 4 words have been typed"
+                          >
+                            ?
+                          </span>
+                        )}
                       </span>
                     ))}
                   </div>
@@ -471,23 +479,21 @@ export default function App() {
                   open={open === 2}
                   onToggle={() => setOpen(open === 2 ? null : 2)}
                 >
-                  The model only understands numbers, not words, so we turn the
-                  last {model.context_size} words into one long vector of 0s and
-                  1s.
+                  The model only understands numbers, not words, so we need to
+                  turn the text so far (the last {model.context_size} words)
+                  into a vector of 0s and 1s representing the words used so far.
                   <p className="note" style={{ marginTop: 8 }}>
-                    The vector has to be able to describe
-                    <i> any </i> input, and an input is always &ldquo;the last{" "}
+                    In our example, an input is always &ldquo;the last{" "}
                     {model.context_size} words.&rdquo; For each word we need to
                     record two things:
                     <b> which word </b> it was ({model.vocab.length}{" "}
                     possibilities) and <b> where </b> it sat (
-                    {model.context_size} positions). That's {model.context_size}{" "}
-                    positions × {model.vocab.length} words ={" "}
-                    {model.context_size * model.vocab.length} slots, one per
-                    question &ldquo;is word X at position Y?&rdquo; A slot is 1
-                    when true, 0 otherwise. Encoding position matters because
-                    word order changes meaning (&ldquo;dog bit man&rdquo; vs
-                    &ldquo;man bit dog&rdquo;).
+                    {model.context_size} positions), giving us{" "}
+                    {model.context_size * model.vocab.length} slots. A slot is 1
+                    when that word sits in that position in the last 4 words, 0
+                    otherwise. Encoding position matters because word order
+                    changes meaning (&ldquo;dog bit man&rdquo; vs &ldquo;man bit
+                    dog&rdquo;).
                   </p>
                   <p className="demo-label">
                     For your prompt, the flattened input looks like this:
@@ -542,8 +548,10 @@ export default function App() {
                   To predict the next word, the model runs one operation:{" "}
                   <code>logits = x @ W + b</code>. The flattened input{" "}
                   <code>x</code> is multiplied by the weight table{" "}
-                  <code>W</code>, giving one raw score (a &ldquo;logit&rdquo;)
-                  for every word in the vocabulary. That's all the
+                  <code>W</code> which expresses the probability of other words
+                  in the vocabulary following a given word. This operation
+                  produces one raw probability score (a &ldquo;logit&rdquo;) for
+                  every word in the vocabulary. That's all the
                   &ldquo;thinking.&rdquo;
                   <p className="demo-label">
                     The logits it computed for the current context (top few):
