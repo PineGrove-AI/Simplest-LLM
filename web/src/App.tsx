@@ -659,11 +659,23 @@ export default function App() {
           <>
             {/* --- Train your own --- */}
             <section className="card trainer">
-              <h2>Train your own</h2>
+              <h2>Train the model</h2>
               <p className="note">
-                Type some sentences, hit Train, and watch a brand-new weight
-                table get learned right here in your browser. Then use the test
-                tab to try it out!
+                Here you can add sentences as training data. Your sentences will
+                serve two purposes:
+                <br />
+                - They will add new words to the vocabulary
+                <br />
+                - They will establish new patterns of word ordering
+                probabilities
+                <br />
+                When you run your training, the model will run its completion
+                function in a loop, adjusting the probability weights each time
+                its patterns don't match the ones in your training data.
+              </p>
+              <p className="note">
+                After running your training, you can use the Test tab to see the
+                before/after effects of your training data.
               </p>
               <textarea
                 value={trainText}
