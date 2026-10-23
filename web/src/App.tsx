@@ -65,6 +65,128 @@ function Step({
   );
 }
 
+// The "From here to a full LLM" tab: what a real LLM adds on top of this one.
+const LLM_STEPS: { title: string; body: ReactNode }[] = [
+  {
+    title: "Tokens instead of words",
+    body: (
+      <>
+        This model only knows whole words from its training text. Real LLMs
+        split text into <b>tokens</b>: common chunks like &ldquo;play&rdquo;,
+        &ldquo;ing&rdquo; or &ldquo;!&rdquo;. Around 100.000 of them can spell
+        out any word, in any language, including code.
+      </>
+    ),
+  },
+  {
+    title: "Embeddings instead of 0s and 1s",
+    body: (
+      <>
+        In the Flatten step each word is just a 1 in its own slot, so
+        &ldquo;cat&rdquo; and &ldquo;dog&rdquo; are as unrelated as
+        &ldquo;cat&rdquo; and &ldquo;couch&rdquo;. Real LLMs turn each token
+        into an <b>embedding</b>: a long list of numbers that works like
+        coordinates for its meaning. Similar words end up close together, so
+        what the model learns about cats partly carries over to dogs.
+      </>
+    ),
+  },
+  {
+    title: "Attention: words looking at each other",
+    body: (
+      <>
+        Here, each word votes for the next word on its own, so &ldquo;not
+        good&rdquo; is just &ldquo;not&rdquo; plus &ldquo;good&rdquo;.{" "}
+        <b>Attention</b> lets every token look at all the others and decide
+        which ones matter: &ldquo;it&rdquo; can find &ldquo;the cat&rdquo; three
+        sentences back. This is also why an LLM can read hundreds of thousands
+        of tokens instead of the last {defaultModel.context_size}.
+      </>
+    ),
+  },
+  {
+    title: "Thinking layers",
+    body: (
+      <>
+        This whole model is one multiply-and-add, which can only add votes
+        together. After each attention step, real LLMs run every token through a
+        small <b>neural network</b> that can combine clues non-linearly - for
+        example, learning &ldquo;"milk" is likely after "drank", but only when
+        the subject is cat, not dog.&rdquo; Much of the model&rsquo;s knowledge
+        is stored here.
+      </>
+    ),
+  },
+  {
+    title: "Many layers stacked",
+    body: (
+      <>
+        Attention plus a thinking layer makes one <b>transformer layer</b>. Real
+        LLMs stack dozens of them, each refining the last one&rsquo;s
+        understanding: early layers handle grammar and word meaning, later ones
+        more abstract things like intent and reasoning.
+      </>
+    ),
+  },
+  {
+    title: "The same final step",
+    body: (
+      <>
+        After the last layer, an LLM does exactly what steps 3 to 5 in Explore
+        do: one score per possible next token, softmax, then sample. Pick a
+        token, append it, repeat.
+      </>
+    ),
+  },
+  {
+    title: "Much, much bigger",
+    body: (
+      <>
+        The training method is the same one the Train tab uses: predict the next
+        word, measure the loss, nudge the weights. Just at a very different
+        scale.
+        <table className="test-table scale-table">
+          <thead>
+            <tr>
+              <th />
+              <th>This model</th>
+              <th>A large LLM</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Weights</td>
+              <td>Hundreds</td>
+              <td>Billions or more</td>
+            </tr>
+            <tr>
+              <td>Training text</td>
+              <td>A few sentences</td>
+              <td>Trillions of tokens</td>
+            </tr>
+            <tr>
+              <td>Training time</td>
+              <td>Seconds</td>
+              <td>Months on thousands of chips</td>
+            </tr>
+          </tbody>
+        </table>
+      </>
+    ),
+  },
+  {
+    title: "Learning to be an assistant",
+    body: (
+      <>
+        Training on text alone gives a model that <i>continues</i> text, like
+        this one. To become an assistant, it gets a second round of training on
+        example conversations and on feedback about which answers are more
+        helpful, honest and safe.
+      </>
+    ),
+  },
+];
+
 // Max rows to render in the JSON viewer before truncating.
 const MAX_JSON_ROWS = 50;
 
@@ -177,7 +299,9 @@ export default function App() {
   }, [showModel]);
 
   // Active tab: explore | train | test.
-  const [tab, setTab] = useState<"explore" | "train" | "test">("explore");
+  const [tab, setTab] = useState<"explore" | "train" | "test" | "llm">(
+    "explore",
+  );
 
   // Test bench state.
   const [testPrompts, setTestPrompts] = useState("the cat\nthe dog");
@@ -407,6 +531,13 @@ export default function App() {
             onClick={() => setTab("test")}
           >
             Test
+          </button>
+          <button
+            className={`tab ${tab === "llm" ? "active" : ""}`}
+            onClick={() => setTab("llm")}
+          >
+            <span className="tab-long">From here to a full LLM</span>
+            <span className="tab-short">Full LLM</span>
           </button>
         </nav>
 
@@ -887,6 +1018,28 @@ export default function App() {
                 After column change while Before stays the same.
               </p>
             )}
+          </section>
+        )}
+
+        {tab === "llm" && (
+          <section className="card">
+            <h2>From here to a full LLM</h2>
+            <p className="note" style={{ marginTop: 0 }}>
+              An LLM like the ones you know runs the same loop as this one: turn
+              text into numbers, score every possible next token, pick one,
+              repeat. What it adds is everything in the middle.
+            </p>
+            <ol className="llm-steps">
+              {LLM_STEPS.map(({ title, body }, i) => (
+                <li key={title}>
+                  <span className="step-num">{i + 1}</span>
+                  <div>
+                    <h3>{title}</h3>
+                    {body}
+                  </div>
+                </li>
+              ))}
+            </ol>
           </section>
         )}
 

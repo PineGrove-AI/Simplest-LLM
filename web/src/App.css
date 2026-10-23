@@ -131,7 +131,11 @@
   display: flex;
   gap: 6px;
   margin-top: 20px;
-  border-bottom: 1px solid #e4e4e7;
+  /* Inset shadow instead of a border so overflow-x doesn't clip the active
+     tab's underline. */
+  box-shadow: inset 0 -1px #e4e4e7;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 .tab {
   background: none;
@@ -142,7 +146,7 @@
   color: #888;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  white-space: nowrap;
 }
 .tab:hover {
   color: #333;
@@ -672,7 +676,8 @@
 /* Mobile-only pieces, hidden on desktop. */
 .side-backdrop,
 .toggle-close,
-.model-fab {
+.model-fab,
+.tab-short {
   display: none;
 }
 .flatten-scroll,
@@ -768,6 +773,15 @@
   .hero h1 {
     font-size: 1.6rem;
   }
+  .tab {
+    padding: 10px 12px;
+  }
+  .tab-long {
+    display: none;
+  }
+  .tab-short {
+    display: inline;
+  }
   .sub {
     font-size: 1rem;
   }
@@ -799,4 +813,29 @@
   to {
     transform: translateY(0);
   }
+}
+
+/* --- From here to a full LLM --- */
+.llm-steps {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.llm-steps li {
+  display: flex;
+  gap: 12px;
+  color: #333;
+}
+.llm-steps .step-num {
+  margin-top: 1px;
+}
+.llm-steps h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+.scale-table td:first-child {
+  color: #888;
 }
